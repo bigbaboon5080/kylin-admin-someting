@@ -1,0 +1,23 @@
+# 敏感信息，千万不能上传
+*.env
+secrets/
+config.local.sh
+*.pem
+*.key
+
+
+# 日志文件，不能上传
+*.log
+logs/
+
+# 临时备份，不需要上传
+*.bak
+*.tmp
+*~
+
+# macos 系统文件
+.DS_Store
+
+# IDE配置文件
+.vscode/
+.idea/
