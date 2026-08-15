@@ -8,6 +8,7 @@
 #   首选 - systemd 日志 (journalctl --list-boots)
 #           开机时间 = 该次启动写入的第一条日志时间
 #           关机时间 = 该次启动写入的最后一条日志时间(约等于关机时刻)
+#           时间统一按系统本地时区显示(自动检测, 避免显示为 UTC)
 #   备用 - 系统记账文件 /var/log/wtmp (last 命令)
 #
 # 用法: bash boot_shutdown_records.sh
@@ -24,14 +25,40 @@ is_systemd() {
     return 1
 }
 
+#----------------------------------------------------------------------
+# 函数: 获取系统本地时区标识 (如 Asia/Shanghai)
+#   优先级: /etc/timezone -> /etc/localtime 软链接 -> timedatectl
+#   失败时输出空字符串
+#----------------------------------------------------------------------
+get_local_tz() {
+    if [ -f /etc/timezone ]; then
+        cat /etc/timezone
+        return 0
+    fi
+    if [ -L /etc/localtime ]; then
+        readlink /etc/localtime | sed 's|^.*/zoneinfo/||'
+        return 0
+    fi
+    if command -v timedatectl >/dev/null 2>&1; then
+        timedatectl show -p Timezone --value 2>/dev/null
+        return 0
+    fi
+    echo ""
+    return 0
+}
+
 #======================================================================
 # 主程序
 #======================================================================
+# 检测系统本地时区, 用于强制按本地时间显示(避免 UTC)
+LOCAL_TZ=$(get_local_tz)
+
 echo "================================================================"
 echo "  麒麟系统 开关机记录"
 echo "  主机名  : $(hostname)"
 echo "  系统    : $(uname -s) $(uname -r)"
-echo "  查询时间: $(date '+%Y-%m-%d %H:%M:%S')"
+echo "  查询时间: $(date '+%Y-%m-%d %H:%M:%S') $(date +%Z)"
+[ -n "$LOCAL_TZ" ] && echo "  时区    : ${LOCAL_TZ}"
 echo "================================================================"
 echo ""
 
@@ -40,7 +67,12 @@ total=0
 #------------------ 数据源 1: systemd journal --------------------------
 if is_systemd && command -v journalctl >/dev/null 2>&1; then
     # 将每次启动记录读入数组 (mapfile 需 bash>=4)
-    mapfile -t boots < <(journalctl --list-boots 2>/dev/null)
+    # 显式指定本地时区调用, 确保输出的是本地时间而非 UTC
+    if [ -n "$LOCAL_TZ" ]; then
+        mapfile -t boots < <(TZ="$LOCAL_TZ" journalctl --list-boots 2>/dev/null)
+    else
+        mapfile -t boots < <(journalctl --list-boots 2>/dev/null)
+    fi
 
     if [ "${#boots[@]}" -gt 0 ]; then
         echo "◆ 数据源: systemd 日志 (journalctl --list-boots)"
